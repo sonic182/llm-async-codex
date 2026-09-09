@@ -16,3 +16,7 @@ async for chunk in response.stream_content():
 ```
 
 This reads an existing Codex CLI login from `$CODEX_HOME/auth.json` or `~/.codex/auth.json`; it does not implement login, token refresh, or non-streaming responses yet.
+
+## TODO
+
+- Support streamed tool calls and continue tool loops with `previous_response_id`.
