@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
+from llm_async.models import Response
 from llm_async.providers.openai_responses import OpenAIResponsesProvider
 
 from .auth import CodexCredentials, load_credentials
@@ -27,6 +29,48 @@ class CodexProvider(OpenAIResponsesProvider):
     def from_codex_home(cls, path: Path | None = None) -> CodexProvider:
         """Create a provider from an existing Codex CLI login."""
         return cls(load_credentials(path))
+
+    async def _single_complete(self, *args: Any, **kwargs: Any) -> Response:
+        stream = args[2] if len(args) > 2 else kwargs.get("stream", False)
+        if not stream:
+            raise ValueError("Codex subscriptions require stream=True")
+        kwargs.setdefault("store", False)
+        return await super()._single_complete(*args, **kwargs)
+
+    def _messages_to_input(
+        self, messages: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Convert text messages to the list-only Codex Responses input format."""
+        input_items = super()._messages_to_input(messages)
+        if isinstance(input_items, str):
+            return [
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": input_items}],
+                }
+            ]
+
+        normalized: list[dict[str, Any]] = []
+        for item in input_items:
+            if item.get("role") == "user" and isinstance(item.get("content"), str):
+                normalized.append(
+                    {
+                        **item,
+                        "content": [{"type": "input_text", "text": item["content"]}],
+                    }
+                )
+            elif item.get("role") == "assistant" and isinstance(
+                item.get("content"), str
+            ):
+                normalized.append(
+                    {
+                        **item,
+                        "content": [{"type": "output_text", "text": item["content"]}],
+                    }
+                )
+            else:
+                normalized.append(item)
+        return normalized
 
     def _default_headers(self) -> dict[str, str]:
         headers = super()._default_headers()
