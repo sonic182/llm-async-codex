@@ -21,6 +21,7 @@ class CodexCredentials:
     access_token: str
     refresh_token: str | None = None
     account_id: str | None = None
+    expires_at: float | None = None
 
 
 def default_auth_path() -> Path:
@@ -50,8 +51,26 @@ def load_credentials(path: Path | None = None) -> CodexCredentials:
     account_id = _string_or_none(tokens.get("account_id")) or _string_or_none(
         value.get("account_id")
     )
-    return CodexCredentials(access_token, refresh_token, account_id)
+    expires_at = tokens.get("expires_at")
+    if not isinstance(expires_at, (int, float)):
+        expires_at = None
+    return CodexCredentials(access_token, refresh_token, account_id, expires_at)
 
 
 def _string_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def save_credentials(credentials: CodexCredentials, path: Path | None = None) -> Path:
+    """Write credentials to a Codex-CLI-compatible auth file. Returns the path written."""
+    auth_path = path or default_auth_path()
+    auth_path.parent.mkdir(parents=True, exist_ok=True)
+    tokens: dict[str, Any] = {"access_token": credentials.access_token}
+    if credentials.refresh_token:
+        tokens["refresh_token"] = credentials.refresh_token
+    if credentials.account_id:
+        tokens["account_id"] = credentials.account_id
+    if credentials.expires_at is not None:
+        tokens["expires_at"] = credentials.expires_at
+    auth_path.write_text(json.dumps({"tokens": tokens}, indent=2), encoding="utf-8")
+    return auth_path

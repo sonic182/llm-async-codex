@@ -4,7 +4,13 @@ import json
 import pytest
 from llm_async.providers.openai_responses import OpenAIResponsesProvider
 
-from llm_async_codex import CodexAuthError, CodexProvider, load_credentials
+from llm_async_codex import (
+    CodexAuthError,
+    CodexCredentials,
+    CodexProvider,
+    load_credentials,
+    save_credentials,
+)
 
 
 def test_load_credentials_and_build_provider_headers(tmp_path):
@@ -60,6 +66,15 @@ def test_provider_requires_streaming(tmp_path):
 
     with pytest.raises(ValueError, match="require stream=True"):
         asyncio.run(provider._single_complete("model", [], False))
+
+
+def test_expires_at_round_trips_through_save_and_load(tmp_path):
+    auth_path = tmp_path / "auth.json"
+    credentials = CodexCredentials(access_token="access-token", expires_at=1234567890.0)
+    save_credentials(credentials, auth_path)
+
+    loaded = load_credentials(auth_path)
+    assert loaded.expires_at == 1234567890.0
 
 
 def test_load_credentials_rejects_missing_access_token(tmp_path):

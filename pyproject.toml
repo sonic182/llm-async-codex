@@ -7,7 +7,8 @@ authors = [
 ]
 requires-python = ">=3.10,<4.0"
 dependencies = [
-    "llm-async (>=0.5.1)"
+    "llm-async (>=0.5.2)",
+    "aiosonic (>=1.0.6)"
 ]
 
 [dependency-groups]
@@ -19,6 +20,9 @@ dev = [
 
 [tool.poetry]
 packages = [{ include = "llm_async_codex", from = "src" }]
+
+[tool.poetry.scripts]
+llm-async-codex = "llm_async_codex.cli:main"
 
 [tool.ruff]
 target-version = "py310"

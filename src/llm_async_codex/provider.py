@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from pathlib import Path
 from typing import Any
 
 from llm_async.models import Response
 from llm_async.providers.openai_responses import OpenAIResponsesProvider
 
-from .auth import CodexCredentials, load_credentials
+from .auth import CodexCredentials, default_auth_path, load_credentials
+from .oauth import TOKEN_REFRESH_SAFETY_MARGIN_SECONDS, refresh_credentials
 
 CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 
@@ -21,20 +24,43 @@ class CodexProvider(OpenAIResponsesProvider):
         credentials: CodexCredentials,
         *,
         base_url: str = CODEX_BASE_URL,
+        http2: bool = False,
+        auth_path: Path | None = None,
     ) -> None:
         self.credentials = credentials
-        super().__init__(api_key=credentials.access_token, base_url=base_url)
+        self.auth_path = auth_path
+        self._refresh_lock = asyncio.Lock()
+        super().__init__(api_key=credentials.access_token, base_url=base_url, http2=http2)
 
     @classmethod
     def from_codex_home(cls, path: Path | None = None) -> CodexProvider:
         """Create a provider from an existing Codex CLI login."""
-        return cls(load_credentials(path))
+        return cls(load_credentials(path), auth_path=path or default_auth_path())
+
+    async def _ensure_fresh_credentials(self) -> None:
+        credentials = self.credentials
+        if not credentials.refresh_token or credentials.expires_at is None:
+            return
+        if time.time() < credentials.expires_at - TOKEN_REFRESH_SAFETY_MARGIN_SECONDS:
+            return
+
+        async with self._refresh_lock:
+            credentials = self.credentials
+            if (
+                not credentials.refresh_token
+                or credentials.expires_at is None
+                or time.time() < credentials.expires_at - TOKEN_REFRESH_SAFETY_MARGIN_SECONDS
+            ):
+                return
+            self.credentials = await refresh_credentials(credentials, self.auth_path)
+            self.api_key = self.credentials.access_token
 
     async def _single_complete(self, *args: Any, **kwargs: Any) -> Response:
         stream = args[2] if len(args) > 2 else kwargs.get("stream", False)
         if not stream:
             raise ValueError("Codex subscriptions require stream=True")
         kwargs.setdefault("store", False)
+        await self._ensure_fresh_credentials()
         return await super()._single_complete(*args, **kwargs)
 
     def _messages_to_input(
