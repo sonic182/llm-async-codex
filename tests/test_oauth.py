@@ -9,13 +9,14 @@ from urllib.parse import parse_qs, urlparse
 import aiosonic
 import pytest
 
-from llm_async_codex import load_credentials
+from llm_async_codex import CodexCredentials, load_credentials
 from llm_async_codex.oauth import (
     OAUTH_PORT,
     CodexLoginError,
     extract_account_id,
     login_with_browser,
     login_with_device_code,
+    refresh_credentials,
 )
 
 
@@ -143,3 +144,38 @@ def test_login_with_browser_raises_on_timeout(monkeypatch, tmp_path):
 
     with pytest.raises(CodexLoginError, match="timed out"):
         asyncio.run(login_with_browser(tmp_path / "auth.json"))
+
+
+def test_refresh_credentials_updates_and_saves(monkeypatch, tmp_path):
+    async def fake_post(self, url, data=None, headers=None, json=None, **kwargs):
+        assert url == "https://auth.openai.com/oauth/token"
+        assert data["grant_type"] == "refresh_token"
+        assert data["refresh_token"] == "old-refresh-token"
+        return _FakeResponse(
+            200,
+            {
+                "access_token": "new-access-token",
+                "expires_in": 3600,
+            },
+        )
+
+    monkeypatch.setattr(aiosonic.HTTPClient, "post", fake_post)
+
+    old_credentials = CodexCredentials(
+        access_token="old-access-token",
+        refresh_token="old-refresh-token",
+        account_id="account-id",
+    )
+    auth_path = tmp_path / "auth.json"
+    refreshed = asyncio.run(refresh_credentials(old_credentials, auth_path))
+
+    assert refreshed.access_token == "new-access-token"
+    assert refreshed.refresh_token == "old-refresh-token"
+    assert refreshed.account_id == "account-id"
+    assert refreshed.expires_at is not None
+    assert load_credentials(auth_path) == refreshed
+
+
+def test_refresh_credentials_requires_refresh_token():
+    with pytest.raises(CodexLoginError, match="no refresh token"):
+        asyncio.run(refresh_credentials(CodexCredentials(access_token="access-token")))

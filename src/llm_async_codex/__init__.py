@@ -7,7 +7,14 @@ from .auth import (
     load_credentials,
     save_credentials,
 )
-from .oauth import CodexLoginError, login, login_with_browser, login_with_device_code
+from .oauth import (
+    CodexLoginError,
+    login,
+    login_with_browser,
+    login_with_device_code,
+    refresh_access_token,
+    refresh_credentials,
+)
 from .provider import CODEX_BASE_URL, CodexProvider
 
 __all__ = [
@@ -21,5 +28,7 @@ __all__ = [
     "login",
     "login_with_browser",
     "login_with_device_code",
+    "refresh_access_token",
+    "refresh_credentials",
     "save_credentials",
 ]

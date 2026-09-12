@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import secrets
+import time
 import webbrowser
 from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -28,6 +29,7 @@ REDIRECT_URI = f"http://localhost:{OAUTH_PORT}/auth/callback"
 ORIGINATOR = "llm-async-codex"
 CALLBACK_TIMEOUT_SECONDS = 300
 DEVICE_POLL_SAFETY_MARGIN_SECONDS = 3
+TOKEN_REFRESH_SAFETY_MARGIN_SECONDS = 60
 
 
 class CodexLoginError(RuntimeError):
@@ -78,6 +80,13 @@ def parse_jwt_claims(token: str) -> dict[str, Any] | None:
         return json.loads(base64.urlsafe_b64decode(parts[1] + padding))
     except (ValueError, json.JSONDecodeError):
         return None
+
+
+def _compute_expires_at(tokens: Mapping[str, Any]) -> float | None:
+    expires_in = tokens.get("expires_in")
+    if not isinstance(expires_in, (int, float)):
+        return None
+    return time.time() + expires_in
 
 
 def extract_account_id(tokens: Mapping[str, Any]) -> str | None:
@@ -205,6 +214,7 @@ async def login_with_browser(
         access_token=tokens["access_token"],
         refresh_token=tokens.get("refresh_token"),
         account_id=extract_account_id(tokens),
+        expires_at=_compute_expires_at(tokens),
     )
     resolved_path = save_credentials(credentials, auth_path)
     logger.info("Saved credentials to %s", resolved_path)
@@ -266,10 +276,47 @@ async def login_with_device_code(
         access_token=tokens["access_token"],
         refresh_token=tokens.get("refresh_token"),
         account_id=extract_account_id(tokens),
+        expires_at=_compute_expires_at(tokens),
     )
     resolved_path = save_credentials(credentials, auth_path)
     logger.info("Saved credentials to %s", resolved_path)
     return credentials
+
+
+async def refresh_access_token(refresh_token: str) -> dict[str, Any]:
+    """Exchange a refresh token for a new access token."""
+    async with aiosonic.HTTPClient() as client:
+        response = await client.post(
+            f"{ISSUER}/oauth/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": CLIENT_ID,
+            },
+        )
+        logger.debug("Token refresh response: %s", response.status_code)
+        if response.status_code != 200:
+            raise CodexLoginError(f"token refresh failed: {response.status_code}")
+        return json.loads(await response.text())
+
+
+async def refresh_credentials(
+    credentials: CodexCredentials, auth_path: Path | None = None
+) -> CodexCredentials:
+    """Refresh an access token and persist the result."""
+    if not credentials.refresh_token:
+        raise CodexLoginError("no refresh token available")
+
+    tokens = await refresh_access_token(credentials.refresh_token)
+    refreshed = CodexCredentials(
+        access_token=tokens["access_token"],
+        refresh_token=tokens.get("refresh_token") or credentials.refresh_token,
+        account_id=extract_account_id(tokens) or credentials.account_id,
+        expires_at=_compute_expires_at(tokens),
+    )
+    resolved_path = save_credentials(refreshed, auth_path)
+    logger.debug("Refreshed credentials saved to %s", resolved_path)
+    return refreshed
 
 
 async def login(

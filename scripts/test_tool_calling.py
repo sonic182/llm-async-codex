@@ -40,7 +40,7 @@ def add_numbers(a: int, b: int) -> int:
 
 async def main() -> int:
     auth_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("auth.json")
-    provider = CodexProvider(load_credentials(auth_path), http2=True)
+    provider = CodexProvider(load_credentials(auth_path), http2=True, auth_path=auth_path)
 
     question = (
         "What is 482193 + 917364? Use the add_numbers tool to compute it, "
