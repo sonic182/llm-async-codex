@@ -21,9 +21,10 @@ class CodexProvider(OpenAIResponsesProvider):
         credentials: CodexCredentials,
         *,
         base_url: str = CODEX_BASE_URL,
+        http2: bool = False,
     ) -> None:
         self.credentials = credentials
-        super().__init__(api_key=credentials.access_token, base_url=base_url)
+        super().__init__(api_key=credentials.access_token, base_url=base_url, http2=http2)
 
     @classmethod
     def from_codex_home(cls, path: Path | None = None) -> CodexProvider:
