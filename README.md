@@ -38,8 +38,3 @@ Tool calling works through the normal streaming API: call `provider.acomplete(..
 
 - **Streaming only**: the Codex backend requires `stream=True`; non-streaming requests are rejected.
 - **No stateless multi-turn**: the backend rejects `store=True` (`"Store must be set to false"`), so `previous_response_id`-based continuation (as used in some of `llm-async`'s other Responses API examples) does not work here. Resend the full conversation history (including `function_call`/`function_call_output` items) on every turn instead.
-- **No automatic token refresh yet**: `CodexCredentials.refresh_token` is loaded and saved, but nothing renews an expired access token automatically.
-
-## TODO
-
-- Automatic token refresh.
