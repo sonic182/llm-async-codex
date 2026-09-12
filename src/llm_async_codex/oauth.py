@@ -180,7 +180,13 @@ async def login_with_browser(
     server.timeout = CALLBACK_TIMEOUT_SECONDS
 
     authorize_url = _build_authorize_url(state, code_challenge)
-    logger.debug("Authorize URL: %s", authorize_url)
+    authorize_endpoint = urlparse(authorize_url)
+    logger.debug(
+        "Authorize endpoint: %s://%s%s",
+        authorize_endpoint.scheme,
+        authorize_endpoint.netloc,
+        authorize_endpoint.path,
+    )
     logger.info("Listening on %s ...", REDIRECT_URI)
     if webbrowser.open(authorize_url):
         logger.info("Opened browser for ChatGPT login. Complete the login there.")
