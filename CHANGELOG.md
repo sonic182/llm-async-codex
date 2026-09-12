@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-13
+
+### Added
+
+- MIT license (`LICENSE.md`).
+- Packaging metadata: `readme`, `license`, `keywords`, `classifiers`, and `[project.urls]` (Homepage, Repository, Documentation, Bug Tracker, Changelog).
+- `.github/workflows/ci.yml`: lint, test, and build on push/PR.
+- `Makefile` with `test`, `lint`, `format`, `build`, `upload_pypi`/`publish`/`release` targets.
+- Expanded `.gitignore` to cover standard Python packaging/tooling artifacts.
+
 ## [0.1.0] - 2026-09-13
 
 ### Added
@@ -22,5 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional HTTP/2 support (`CodexProvider(..., http2=True)`).
 - `scripts/test_tool_calling.py`: a smoke-test script exercising a full tool-calling round trip against a real login.
 
-[unreleased]: https://github.com/sonic182/llm-async-codex/compare/0.1.0...HEAD
+[unreleased]: https://github.com/sonic182/llm-async-codex/compare/0.1.1...HEAD
+[0.1.1]: https://github.com/sonic182/llm-async-codex/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/sonic182/llm-async-codex/releases/tag/0.1.0
