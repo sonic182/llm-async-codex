@@ -1,7 +1,22 @@
 [project]
 name = "llm-async-codex"
-version = "0.1.0"
+version = "0.1.1"
 description = "ChatGPT Codex subscription provider for llm-async"
+readme = "README.md"
+license = "MIT"
+keywords = ["llm", "codex", "chatgpt", "openai", "asyncio", "ai", "oauth", "streaming", "tool calling"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Intended Audience :: Developers",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 authors = [
     {name = "Johanderson Mogollon",email = "johander1822@gmail.com"}
 ]
@@ -10,6 +25,16 @@ dependencies = [
     "llm-async (>=0.5.2)",
     "aiosonic (>=1.0.6)"
 ]
+
+[project.scripts]
+llm-async-codex = "llm_async_codex.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/sonic182/llm-async-codex"
+Repository = "https://github.com/sonic182/llm-async-codex"
+Documentation = "https://github.com/sonic182/llm-async-codex#readme"
+"Bug Tracker" = "https://github.com/sonic182/llm-async-codex/issues"
+Changelog = "https://github.com/sonic182/llm-async-codex/blob/master/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
@@ -20,9 +45,6 @@ dev = [
 
 [tool.poetry]
 packages = [{ include = "llm_async_codex", from = "src" }]
-
-[tool.poetry.scripts]
-llm-async-codex = "llm_async_codex.cli:main"
 
 [tool.ruff]
 target-version = "py310"
