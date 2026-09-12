@@ -55,3 +55,16 @@ def load_credentials(path: Path | None = None) -> CodexCredentials:
 
 def _string_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def save_credentials(credentials: CodexCredentials, path: Path | None = None) -> Path:
+    """Write credentials to a Codex-CLI-compatible auth file. Returns the path written."""
+    auth_path = path or default_auth_path()
+    auth_path.parent.mkdir(parents=True, exist_ok=True)
+    tokens: dict[str, str] = {"access_token": credentials.access_token}
+    if credentials.refresh_token:
+        tokens["refresh_token"] = credentials.refresh_token
+    if credentials.account_id:
+        tokens["account_id"] = credentials.account_id
+    auth_path.write_text(json.dumps({"tokens": tokens}, indent=2), encoding="utf-8")
+    return auth_path
