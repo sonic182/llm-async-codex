@@ -15,13 +15,14 @@ from .oauth import (
     refresh_access_token,
     refresh_credentials,
 )
-from .provider import CODEX_BASE_URL, CodexProvider
+from .provider import CODEX_BASE_URL, CodexModelCapabilities, CodexProvider
 
 __all__ = [
     "CODEX_BASE_URL",
     "CodexAuthError",
     "CodexCredentials",
     "CodexLoginError",
+    "CodexModelCapabilities",
     "CodexProvider",
     "default_auth_path",
     "load_credentials",

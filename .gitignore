@@ -80,4 +80,5 @@ dmypy.json
 Thumbs.db
 
 # Project-specific
+.reference/
 *auth.json
