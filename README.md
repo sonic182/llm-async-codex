@@ -34,7 +34,14 @@ or from Python: `await login(device_code=False, auth_path=None, verbose=False)`.
 
 Tool calling works through the normal streaming API: call `provider.acomplete(..., stream=True, tools=[...])`, drain `response.stream_content()`, then read `response.main_response.tool_calls`. Requires `llm-async>=0.5.2`.
 
+## Model catalog
+
+`await provider.list_model_slugs()` lists models available to the authenticated account.
+`await provider.get_model_capabilities(model)` returns its context-window and automatic
+compaction limits when present.
+
 ## Limitations
 
 - **Streaming only**: the Codex backend requires `stream=True`; non-streaming requests are rejected.
 - **No stateless multi-turn**: the backend rejects `store=True` (`"Store must be set to false"`), so `previous_response_id`-based continuation (as used in some of `llm-async`'s other Responses API examples) does not work here. Resend the full conversation history (including `function_call`/`function_call_output` items) on every turn instead.
+- `max_output_tokens` is ignored because the Codex backend rejects it.

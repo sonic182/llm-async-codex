@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-26
+
+### Added
+
+- `CodexProvider.list_model_slugs()` and `get_model_capabilities()` fetch and cache the authenticated Codex model catalog.
+- `CodexModelCapabilities` exposes context-window and automatic compaction limits.
+
+### Fixed
+
+- Preserve response ID, status, usage, and output items from terminal streaming events.
+- Omit `max_output_tokens`, which the Codex backend rejects.
+
 ## [0.1.1] - 2026-09-13
 
 ### Added
@@ -32,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional HTTP/2 support (`CodexProvider(..., http2=True)`).
 - `scripts/test_tool_calling.py`: a smoke-test script exercising a full tool-calling round trip against a real login.
 
-[unreleased]: https://github.com/sonic182/llm-async-codex/compare/0.1.1...HEAD
+[unreleased]: https://github.com/sonic182/llm-async-codex/compare/0.2.0...HEAD
+[0.2.0]: https://github.com/sonic182/llm-async-codex/compare/0.1.1...0.2.0
 [0.1.1]: https://github.com/sonic182/llm-async-codex/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/sonic182/llm-async-codex/releases/tag/0.1.0
