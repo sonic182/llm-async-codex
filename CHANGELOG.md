@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
 ### Added
 
 - `auth_file_lock(path)`: an async context manager holding an exclusive cross-process lock on `<auth file>.lock`; it runs unlocked, with a warning, where no lock can be created.
@@ -55,7 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional HTTP/2 support (`CodexProvider(..., http2=True)`).
 - `scripts/test_tool_calling.py`: a smoke-test script exercising a full tool-calling round trip against a real login.
 
-[unreleased]: https://github.com/sonic182/llm-async-codex/compare/0.2.0...HEAD
+[unreleased]: https://github.com/sonic182/llm-async-codex/compare/0.3.0...HEAD
+[0.3.0]: https://github.com/sonic182/llm-async-codex/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/sonic182/llm-async-codex/compare/0.1.1...0.2.0
 [0.1.1]: https://github.com/sonic182/llm-async-codex/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/sonic182/llm-async-codex/releases/tag/0.1.0
