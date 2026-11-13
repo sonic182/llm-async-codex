@@ -1,6 +1,6 @@
 [project]
 name = "llm-async-codex"
-version = "0.2.0"
+version = "0.3.0"
 description = "ChatGPT Codex subscription provider for llm-async"
 readme = "README.md"
 license = "MIT"
