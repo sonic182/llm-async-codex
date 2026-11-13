@@ -180,8 +180,6 @@ def test_refresh_credentials_requires_refresh_token():
     with pytest.raises(CodexLoginError, match="no refresh token"):
         asyncio.run(refresh_credentials(CodexCredentials(access_token="access-token")))
 
-        asyncio.run(refresh_credentials(CodexCredentials(access_token="access-token")))
-
 
 def test_refresh_credentials_keeps_the_rotated_token_when_saving_fails(monkeypatch):
     async def fake_refresh(refresh_token):

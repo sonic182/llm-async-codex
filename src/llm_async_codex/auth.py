@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
 import logging
@@ -18,7 +19,10 @@ try:
     import fcntl
 except ImportError:  # pragma: no cover - Windows
     fcntl = None  # type: ignore[assignment]
+try:
     import msvcrt
+except ImportError:
+    msvcrt = None  # type: ignore[assignment]
 
 logger = logging.getLogger("llm_async_codex.auth")
 
@@ -68,8 +72,24 @@ def load_credentials(path: Path | None = None) -> CodexCredentials:
     )
     expires_at = tokens.get("expires_at")
     if not isinstance(expires_at, (int, float)):
-        expires_at = None
+        # The Codex CLI does not store an expiry; the access token's own claim carries it.
+        claims = parse_jwt_claims(access_token) or {}
+        exp = claims.get("exp")
+        expires_at = exp if isinstance(exp, (int, float)) else None
     return CodexCredentials(access_token, refresh_token, account_id, expires_at)
+
+
+def parse_jwt_claims(token: str) -> dict[str, Any] | None:
+    """Decode (without verifying) the claims payload of a JWT."""
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    padding = "=" * (-len(parts[1]) % 4)
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(parts[1] + padding))
+    except (ValueError, json.JSONDecodeError):
+        return None
+    return claims if isinstance(claims, dict) else None
 
 
 def _string_or_none(value: object) -> str | None:
@@ -79,20 +99,25 @@ def _string_or_none(value: object) -> str | None:
 def save_credentials(credentials: CodexCredentials, path: Path | None = None) -> Path:
     """Write credentials to a Codex-CLI-compatible auth file. Returns the path written.
 
-    The file is written to a temporary sibling and renamed into place, so a concurrent reader never
-    sees it half-written; it keeps the existing file's permission bits. When the rename is refused
-    (for example a bind-mounted single file, or a file held open on Windows) it is written in place.
+    Other fields already in the file (such as the Codex CLI's ``id_token`` or ``OPENAI_API_KEY``)
+    are kept. A symlinked auth file is updated through its target. The file is written to a
+    temporary sibling and renamed into place, so a concurrent reader never sees it half-written,
+    keeping the existing file's permission bits; when that is refused (a bind-mounted single file,
+    a read-only directory, a file held open on Windows) it is written in place.
     """
-    auth_path = path or default_auth_path()
+    auth_path = _resolved(path or default_auth_path())
     auth_path.parent.mkdir(parents=True, exist_ok=True)
-    tokens: dict[str, Any] = {"access_token": credentials.access_token}
+    document = _existing_document(auth_path)
+    tokens: dict[str, Any] = dict(document.get("tokens") or {})
+    tokens["access_token"] = credentials.access_token
     if credentials.refresh_token:
         tokens["refresh_token"] = credentials.refresh_token
     if credentials.account_id:
         tokens["account_id"] = credentials.account_id
     if credentials.expires_at is not None:
         tokens["expires_at"] = credentials.expires_at
-    content = json.dumps({"tokens": tokens}, indent=2)
+    document["tokens"] = tokens
+    content = json.dumps(document, indent=2)
     try:
         _replace_atomically(auth_path, content)
     except OSError:
@@ -103,6 +128,22 @@ def save_credentials(credentials: CodexCredentials, path: Path | None = None) ->
         )
         auth_path.write_text(content, encoding="utf-8")
     return auth_path
+
+
+def _resolved(path: Path) -> Path:
+    return Path(os.path.realpath(path))
+
+
+def _existing_document(auth_path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(auth_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    if not isinstance(value.get("tokens"), dict):
+        value.pop("tokens", None)
+    return value
 
 
 def _replace_atomically(auth_path: Path, content: str) -> None:
@@ -144,21 +185,35 @@ async def auth_file_lock(path: Path | None = None) -> AsyncIterator[None]:
 
     Every token refresh rotates the refresh token, so providers that share an auth file must
     refresh one at a time. The lock is polled without blocking, so a cancelled waiter leaves
-    nothing behind holding it.
+    nothing behind holding it. A symlinked auth file is locked through its target. When no lock
+    can be taken (a read-only directory, a filesystem without locks, a platform without
+    ``fcntl`` or ``msvcrt``) it logs a warning and runs unlocked, coordinating only within
+    this process.
     """
-    auth_path = path or default_auth_path()
+    auth_path = _resolved(path or default_auth_path())
     lock_path = auth_path.with_name(f"{auth_path.name}.lock")
     try:
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
-    except OSError as error:
-        raise CodexAuthError(
-            f"cannot open lock file {lock_path}: {error}; "
-            "the directory holding the Codex auth file must be writable"
-        ) from error
+    except OSError:
+        logger.warning(
+            "Cannot create %s; refreshing without a cross-process lock",
+            lock_path,
+            exc_info=True,
+        )
+        yield
+        return
     try:
-        while not _try_lock(fd):
-            await asyncio.sleep(_LOCK_POLL_SECONDS)
+        try:
+            while not _try_lock(fd):
+                await asyncio.sleep(_LOCK_POLL_SECONDS)
+        except OSError:
+            logger.warning(
+                "Cannot lock %s; refreshing without a cross-process lock",
+                lock_path,
+                exc_info=True,
+            )
+            yield
+            return
         try:
             yield
         finally:
@@ -171,9 +226,11 @@ def _try_lock(fd: int) -> bool:
     try:
         if fcntl is not None:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        else:  # pragma: no cover - Windows
+        elif msvcrt is not None:  # pragma: no cover - Windows
             os.lseek(fd, 0, os.SEEK_SET)
             msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:  # pragma: no cover - platforms without file locks
+            raise OSError("no file locking on this platform")
     except (BlockingIOError, PermissionError):
         return False
     return True
@@ -182,6 +239,6 @@ def _try_lock(fd: int) -> bool:
 def _unlock(fd: int) -> None:
     if fcntl is not None:
         fcntl.flock(fd, fcntl.LOCK_UN)
-    else:  # pragma: no cover - Windows
+    elif msvcrt is not None:  # pragma: no cover - Windows
         os.lseek(fd, 0, os.SEEK_SET)
         msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)

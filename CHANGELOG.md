@@ -9,13 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `auth_file_lock(path)`: an async context manager holding an exclusive cross-process lock on `<auth file>.lock`.
+- `auth_file_lock(path)`: an async context manager holding an exclusive cross-process lock on `<auth file>.lock`; it runs unlocked, with a warning, where no lock can be created.
 
 ### Fixed
 
-- Providers sharing an auth file no longer fail with `token refresh failed: 401` after another provider refreshed. Each refresh rotates the refresh token, and a provider used to refresh from its own in-memory copy; it now refreshes under `auth_file_lock`, re-reads the file first and reuses credentials already refreshed.
+- Providers sharing an auth file no longer fail with `token refresh failed: 401` after another provider refreshed. Each refresh rotates the refresh token, and a provider used to refresh from its own in-memory copy; it now refreshes under `auth_file_lock`, re-reads the file first and reuses credentials already refreshed by the same account when they are not older than its own.
 - A refresh request already sent is finished and saved even when the caller is cancelled, and a failure to save the refreshed credentials no longer discards them, since the server has already revoked the previous refresh token.
-- `save_credentials` writes atomically (temporary file, fsync, rename) and keeps the file's permission bits, falling back to an in-place write when the rename is refused.
+- `save_credentials` writes atomically (temporary file, fsync, rename), keeps the file's permission bits and the other fields in it (the Codex CLI's `id_token`, `OPENAI_API_KEY`, `last_refresh`), updates a symlinked file through its target, and falls back to an in-place write when the rename is refused. `login()` writes under `auth_file_lock`.
+- `load_credentials` takes the expiry from the access token's `exp` claim when the file has none, so credentials written by the Codex CLI are refreshed.
 
 ## [0.2.0] - 2026-09-26
 

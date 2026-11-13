@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 from dataclasses import replace
 
@@ -262,3 +263,61 @@ def test_refresh_cancelled_after_the_server_rotated_still_saves_the_token(
     asyncio.run(later._ensure_fresh_credentials())
     assert server.calls == 1
     assert later.api_key == "at-1"
+
+
+def test_failed_save_keeps_using_the_rotated_token_at_the_next_expiry(
+    monkeypatch, tmp_path
+):
+    server = _RotatingTokenServer()
+    monkeypatch.setattr("llm_async_codex.oauth.refresh_access_token", server.refresh)
+    auth_path = _expired_auth_file(tmp_path)
+    provider = CodexProvider(load_credentials(auth_path), auth_path=auth_path)
+
+    def broken_save(credentials, path=None):
+        raise OSError(28, "No space left on device")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("llm_async_codex.oauth.save_credentials", broken_save)
+        asyncio.run(provider._ensure_fresh_credentials())
+    provider.credentials = replace(provider.credentials, expires_at=1.0)
+    asyncio.run(provider._ensure_fresh_credentials())
+
+    assert server.calls == 2
+    assert provider.api_key == "at-2"
+
+
+def test_a_file_holding_another_account_is_not_adopted(monkeypatch, tmp_path):
+    server = _RotatingTokenServer()
+    monkeypatch.setattr("llm_async_codex.oauth.refresh_access_token", server.refresh)
+    auth_path = tmp_path / "auth.json"
+    save_credentials(
+        CodexCredentials("other-at", "other-rt", "other-account", time.time() + 3600),
+        auth_path,
+    )
+    provider = CodexProvider(
+        CodexCredentials("at-0", "rt-0", "acct", expires_at=0.0), auth_path=auth_path
+    )
+
+    asyncio.run(provider._ensure_fresh_credentials())
+
+    assert server.calls == 1
+    assert provider.api_key == "at-1"
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="needs a non-root POSIX user for a read-only directory",
+)
+def test_auth_file_in_a_read_only_directory_still_refreshes(monkeypatch, tmp_path):
+    server = _RotatingTokenServer()
+    monkeypatch.setattr("llm_async_codex.oauth.refresh_access_token", server.refresh)
+    auth_path = _expired_auth_file(tmp_path)
+    provider = CodexProvider(load_credentials(auth_path), auth_path=auth_path)
+    tmp_path.chmod(0o555)
+    try:
+        asyncio.run(provider._ensure_fresh_credentials())
+    finally:
+        tmp_path.chmod(0o755)
+
+    assert provider.api_key == "at-1"
+    assert load_credentials(auth_path).refresh_token == "rt-1"

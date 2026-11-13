@@ -45,12 +45,20 @@ def _needs_refresh(credentials: CodexCredentials) -> bool:
 
 
 def _stored_or(fallback: CodexCredentials, auth_path: Path) -> CodexCredentials:
-    # A missing or unreadable file falls back to the in-memory credentials, as before; the
-    # refresh then recreates the file.
+    # Adopt the file only when it holds the same account and is not older than memory: a
+    # missing or unreadable file, another account's login, or a file left behind by a failed
+    # save all keep the in-memory credentials, which are then refreshed and saved.
     try:
-        return load_credentials(auth_path)
+        stored = load_credentials(auth_path)
     except CodexAuthError:
         return fallback
+    if fallback.account_id and stored.account_id != fallback.account_id:
+        return fallback
+    if fallback.expires_at is not None and (
+        stored.expires_at is None or stored.expires_at < fallback.expires_at
+    ):
+        return fallback
+    return stored
 
 
 async def _finish_despite_cancellation(
