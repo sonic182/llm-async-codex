@@ -179,3 +179,22 @@ def test_refresh_credentials_updates_and_saves(monkeypatch, tmp_path):
 def test_refresh_credentials_requires_refresh_token():
     with pytest.raises(CodexLoginError, match="no refresh token"):
         asyncio.run(refresh_credentials(CodexCredentials(access_token="access-token")))
+
+        asyncio.run(refresh_credentials(CodexCredentials(access_token="access-token")))
+
+
+def test_refresh_credentials_keeps_the_rotated_token_when_saving_fails(monkeypatch):
+    async def fake_refresh(refresh_token):
+        return {"access_token": "new-access", "refresh_token": "new-refresh"}
+
+    def broken_save(credentials, path=None):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("llm_async_codex.oauth.refresh_access_token", fake_refresh)
+    monkeypatch.setattr("llm_async_codex.oauth.save_credentials", broken_save)
+
+    refreshed = asyncio.run(
+        refresh_credentials(CodexCredentials("old-access", "old-refresh"))
+    )
+
+    assert refreshed.refresh_token == "new-refresh"

@@ -14,7 +14,13 @@ from llm_async.models.response import StreamChunk
 from llm_async.providers.openai_responses import OpenAIResponsesProvider
 from llm_async.utils.http import stream_json
 
-from .auth import CodexCredentials, default_auth_path, load_credentials
+from .auth import (
+    CodexAuthError,
+    CodexCredentials,
+    auth_file_lock,
+    default_auth_path,
+    load_credentials,
+)
 from .oauth import TOKEN_REFRESH_SAFETY_MARGIN_SECONDS, refresh_credentials
 
 CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
@@ -30,6 +36,38 @@ class CodexModelCapabilities:
     context_window: int
     max_context_window: int
     auto_compact_token_limit: int | None
+
+
+def _needs_refresh(credentials: CodexCredentials) -> bool:
+    if not credentials.refresh_token or credentials.expires_at is None:
+        return False
+    return time.time() >= credentials.expires_at - TOKEN_REFRESH_SAFETY_MARGIN_SECONDS
+
+
+def _stored_or(fallback: CodexCredentials, auth_path: Path) -> CodexCredentials:
+    # A missing or unreadable file falls back to the in-memory credentials, as before; the
+    # refresh then recreates the file.
+    try:
+        return load_credentials(auth_path)
+    except CodexAuthError:
+        return fallback
+
+
+async def _finish_despite_cancellation(
+    refresh: asyncio.Future[CodexCredentials],
+) -> tuple[CodexCredentials, bool]:
+    cancelled = False
+    while True:
+        try:
+            return await asyncio.shield(refresh), cancelled
+        except asyncio.CancelledError:
+            if refresh.cancelled():
+                raise
+            cancelled = True
+        except BaseException as error:
+            if cancelled:
+                raise asyncio.CancelledError from error
+            raise
 
 
 class CodexProvider(OpenAIResponsesProvider):
@@ -57,23 +95,32 @@ class CodexProvider(OpenAIResponsesProvider):
         return cls(load_credentials(path), auth_path=path or default_auth_path())
 
     async def _ensure_fresh_credentials(self) -> None:
-        credentials = self.credentials
-        if not credentials.refresh_token or credentials.expires_at is None:
-            return
-        if time.time() < credentials.expires_at - TOKEN_REFRESH_SAFETY_MARGIN_SECONDS:
-            return
+        """Refresh expiring credentials, sharing the auth file with other providers.
 
+        The auth file is the source of truth: every refresh rotates the refresh token, so a provider
+        that refreshed from its in-memory copy after another provider (or process) had refreshed
+        would send a revoked token and fail with 401 until a new login. The refresh therefore runs
+        under ``auth_file_lock``, re-reads the file first and adopts credentials another provider
+        already refreshed. A refresh request already sent is finished and saved even when the caller
+        is cancelled, because the server has rotated the token by then.
+        """
+        if not _needs_refresh(self.credentials):
+            return
         async with self._refresh_lock:
-            credentials = self.credentials
-            if (
-                not credentials.refresh_token
-                or credentials.expires_at is None
-                or time.time()
-                < credentials.expires_at - TOKEN_REFRESH_SAFETY_MARGIN_SECONDS
-            ):
+            if not _needs_refresh(self.credentials):
                 return
-            self.credentials = await refresh_credentials(credentials, self.auth_path)
-            self.api_key = self.credentials.access_token
+            auth_path = self.auth_path or default_auth_path()
+            cancelled = False
+            async with auth_file_lock(auth_path):
+                current = _stored_or(self.credentials, auth_path)
+                if _needs_refresh(current):
+                    current, cancelled = await _finish_despite_cancellation(
+                        asyncio.ensure_future(refresh_credentials(current, auth_path))
+                    )
+                self.credentials = current
+                self.api_key = current.access_token
+            if cancelled:
+                raise asyncio.CancelledError
 
     async def _single_complete(self, *args: Any, **kwargs: Any) -> Response:
         stream = args[2] if len(args) > 2 else kwargs.get("stream", False)

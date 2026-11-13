@@ -320,8 +320,17 @@ async def refresh_credentials(
         account_id=extract_account_id(tokens) or credentials.account_id,
         expires_at=_compute_expires_at(tokens),
     )
-    resolved_path = save_credentials(refreshed, auth_path)
-    logger.debug("Refreshed credentials saved to %s", resolved_path)
+    # The server has already rotated the refresh token, so a failed save must not lose the
+    # response: the caller keeps working from memory and the error is logged.
+    try:
+        resolved_path = save_credentials(refreshed, auth_path)
+    except OSError:
+        logger.exception(
+            "Could not save refreshed credentials; other clients of this auth file "
+            "will need a new login"
+        )
+    else:
+        logger.debug("Refreshed credentials saved to %s", resolved_path)
     return refreshed
 
 

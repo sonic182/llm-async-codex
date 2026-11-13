@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `auth_file_lock(path)`: an async context manager holding an exclusive cross-process lock on `<auth file>.lock`.
+
+### Fixed
+
+- Providers sharing an auth file no longer fail with `token refresh failed: 401` after another provider refreshed. Each refresh rotates the refresh token, and a provider used to refresh from its own in-memory copy; it now refreshes under `auth_file_lock`, re-reads the file first and reuses credentials already refreshed.
+- A refresh request already sent is finished and saved even when the caller is cancelled, and a failure to save the refreshed credentials no longer discards them, since the server has already revoked the previous refresh token.
+- `save_credentials` writes atomically (temporary file, fsync, rename) and keeps the file's permission bits, falling back to an in-place write when the rename is refused.
+
 ## [0.2.0] - 2026-09-26
 
 ### Added

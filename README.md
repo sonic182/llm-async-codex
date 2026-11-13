@@ -30,6 +30,22 @@ llm-async-codex login --verbose
 
 or from Python: `await login(device_code=False, auth_path=None, verbose=False)`.
 
+## Token refresh and shared auth files
+
+Access tokens are refreshed automatically shortly before they expire. Each refresh also rotates the
+refresh token and revokes the previous one, so several providers (or processes) using the same auth
+file coordinate through it:
+
+- a refresh holds an exclusive lock on `<auth file>.lock` next to the auth file;
+- under the lock it re-reads the file and reuses credentials another provider already refreshed;
+- the file is written to a temporary sibling and renamed into place, keeping its permission bits,
+  and written in place only if the rename is refused;
+- a refresh request already sent is finished and saved even if the caller is cancelled.
+
+Pass the same `auth_path` to every provider that shares a login (without one, the default
+`~/.codex/auth.json` is used), and keep the auth file's directory writable. Use `auth_file_lock(path)`
+around your own writes to the file. The lock may not be shared across network or VM file shares.
+
 ## Tool calling
 
 Tool calling works through the normal streaming API: call `provider.acomplete(..., stream=True, tools=[...])`, drain `response.stream_content()`, then read `response.main_response.tool_calls`. Requires `llm-async>=0.5.2`.

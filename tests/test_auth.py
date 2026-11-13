@@ -83,3 +83,23 @@ def test_load_credentials_rejects_missing_access_token(tmp_path):
 
     with pytest.raises(CodexAuthError, match="no access token"):
         load_credentials(auth_path)
+
+
+def test_save_credentials_keeps_mode_and_falls_back_when_rename_fails(
+    tmp_path, monkeypatch
+):
+    auth_path = tmp_path / "auth.json"
+    save_credentials(CodexCredentials("access-1", "refresh-1"), auth_path)
+    auth_path.chmod(0o640)
+
+    save_credentials(CodexCredentials("access-2", "refresh-2"), auth_path)
+    assert auth_path.stat().st_mode & 0o777 == 0o640
+
+    def refuse(src, dst):
+        raise OSError(16, "Device or resource busy")
+
+    monkeypatch.setattr("llm_async_codex.auth.os.replace", refuse)
+    save_credentials(CodexCredentials("access-3", "refresh-3"), auth_path)
+
+    assert load_credentials(auth_path).refresh_token == "refresh-3"
+    assert list(tmp_path.glob("*.tmp")) == []

@@ -1,9 +1,18 @@
 import asyncio
 import time
+from dataclasses import replace
 
+import pytest
 from llm_async.providers.openai_responses import OpenAIResponsesProvider
 
-from llm_async_codex import CodexCredentials, CodexModelCapabilities, CodexProvider
+from llm_async_codex import (
+    CodexCredentials,
+    CodexLoginError,
+    CodexModelCapabilities,
+    CodexProvider,
+    load_credentials,
+    save_credentials,
+)
 
 
 def test_expired_credentials_trigger_refresh(monkeypatch, tmp_path):
@@ -171,3 +180,85 @@ def test_stream_keeps_terminal_response_metadata(monkeypatch):
 
     assert response.original == {**completed, "output": [item]}
     assert response.main_response.content == "hi"
+
+
+class _RotatingTokenServer:
+    """Token endpoint that rotates the refresh token and rejects a used one, like OpenAI's."""
+
+    def __init__(self, response_delay=0.0):
+        self.calls = 0
+        self.response_delay = response_delay
+        self._current = "rt-0"
+
+    async def refresh(self, refresh_token):
+        await asyncio.sleep(0)
+        if refresh_token != self._current:
+            raise CodexLoginError("token refresh failed: 401")
+        self.calls += 1
+        self._current = f"rt-{self.calls}"
+        await asyncio.sleep(self.response_delay)
+        return {
+            "access_token": f"at-{self.calls}",
+            "refresh_token": self._current,
+            "expires_in": 3600,
+        }
+
+
+def _expired_auth_file(tmp_path):
+    auth_path = tmp_path / "auth.json"
+    save_credentials(
+        CodexCredentials("at-0", "rt-0", "acct", expires_at=0.0), auth_path
+    )
+    return auth_path
+
+
+def test_providers_sharing_an_auth_file_never_reuse_a_rotated_token(
+    monkeypatch, tmp_path
+):
+    server = _RotatingTokenServer()
+    monkeypatch.setattr("llm_async_codex.oauth.refresh_access_token", server.refresh)
+    auth_path = _expired_auth_file(tmp_path)
+
+    async def scenario():
+        first, second = (
+            CodexProvider(load_credentials(auth_path), auth_path=auth_path)
+            for _ in range(2)
+        )
+        await first._ensure_fresh_credentials()
+        await second._ensure_fresh_credentials()
+        stored = load_credentials(auth_path)
+        save_credentials(replace(stored, expires_at=0.0), auth_path)
+        concurrent = [
+            CodexProvider(load_credentials(auth_path), auth_path=auth_path)
+            for _ in range(3)
+        ]
+        await asyncio.gather(*(p._ensure_fresh_credentials() for p in concurrent))
+        return [first, second, *concurrent]
+
+    providers = asyncio.run(scenario())
+
+    assert server.calls == 2
+    assert [p.api_key for p in providers] == ["at-1", "at-1", "at-2", "at-2", "at-2"]
+    assert load_credentials(auth_path).refresh_token == "rt-2"
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_refresh_cancelled_after_the_server_rotated_still_saves_the_token(
+    monkeypatch, tmp_path
+):
+    server = _RotatingTokenServer(response_delay=0.2)
+    monkeypatch.setattr("llm_async_codex.oauth.refresh_access_token", server.refresh)
+    auth_path = _expired_auth_file(tmp_path)
+    provider = CodexProvider(load_credentials(auth_path), auth_path=auth_path)
+
+    async def cancelled_refresh():
+        await asyncio.wait_for(provider._ensure_fresh_credentials(), timeout=0.05)
+
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(cancelled_refresh())
+
+    assert load_credentials(auth_path).refresh_token == "rt-1"
+    later = CodexProvider(load_credentials(auth_path), auth_path=auth_path)
+    asyncio.run(later._ensure_fresh_credentials())
+    assert server.calls == 1
+    assert later.api_key == "at-1"
