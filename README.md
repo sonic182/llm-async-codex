@@ -47,10 +47,11 @@ file coordinate through it:
 
 Pass the same `auth_path` to every provider that shares a login (without one, the default
 `~/.codex/auth.json` is used). Keep the auth file's directory writable: without it there is no lock,
-and refreshes coordinate only within one process (a warning is logged). `login()` takes the lock;
+and refreshes are coordinated only within each provider (a warning is logged). `login()` takes the lock;
 use `auth_file_lock(path)` around your own writes to the file. The Codex CLI itself does not take
-this lock, so sharing its file only works through the re-read, and the lock may not be shared across
-network or VM file shares. A file without a stored expiry (as the Codex CLI writes) takes it from the
+this lock, so sharing its file only works through the re-read: a refresh here rotates the CLI's
+refresh token, and a Codex CLI process already running with the old one fails on its own next
+refresh until it is restarted. The lock may not be shared across network or VM file shares. A file without a stored expiry (as the Codex CLI writes) takes it from the
 access token's `exp` claim.
 
 ## Tool calling

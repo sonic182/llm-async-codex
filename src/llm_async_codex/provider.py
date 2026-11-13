@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,8 @@ from .auth import (
     load_credentials,
 )
 from .oauth import TOKEN_REFRESH_SAFETY_MARGIN_SECONDS, refresh_credentials
+
+logger = logging.getLogger("llm_async_codex.provider")
 
 CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 _MODELS_CLIENT_VERSION = "0.157.1"
@@ -52,7 +55,9 @@ def _stored_or(fallback: CodexCredentials, auth_path: Path) -> CodexCredentials:
         stored = load_credentials(auth_path)
     except CodexAuthError:
         return fallback
-    if fallback.account_id and stored.account_id != fallback.account_id:
+    if stored.account_id != fallback.account_id:
+        return fallback
+    if fallback.refresh_token and not stored.refresh_token:
         return fallback
     if fallback.expires_at is not None and (
         stored.expires_at is None or stored.expires_at < fallback.expires_at
@@ -74,6 +79,10 @@ async def _finish_despite_cancellation(
             cancelled = True
         except BaseException as error:
             if cancelled:
+                logger.warning(
+                    "Token refresh failed after its caller was cancelled",
+                    exc_info=error,
+                )
                 raise asyncio.CancelledError from error
             raise
 

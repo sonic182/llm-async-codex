@@ -187,8 +187,8 @@ async def auth_file_lock(path: Path | None = None) -> AsyncIterator[None]:
     refresh one at a time. The lock is polled without blocking, so a cancelled waiter leaves
     nothing behind holding it. A symlinked auth file is locked through its target. When no lock
     can be taken (a read-only directory, a filesystem without locks, a platform without
-    ``fcntl`` or ``msvcrt``) it logs a warning and runs unlocked, coordinating only within
-    this process.
+    ``fcntl`` or ``msvcrt``) it logs a warning and runs unlocked, so refreshes are then
+    coordinated only within each provider.
     """
     auth_path = _resolved(path or default_auth_path())
     lock_path = auth_path.with_name(f"{auth_path.name}.lock")
