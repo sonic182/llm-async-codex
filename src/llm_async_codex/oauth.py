@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import aiosonic
 
-from .auth import CodexCredentials, save_credentials
+from .auth import CodexCredentials, auth_file_lock, parse_jwt_claims, save_credentials
 
 logger = logging.getLogger("llm_async_codex.oauth")
 
@@ -68,18 +68,6 @@ def _build_authorize_url(state: str, code_challenge: str) -> str:
         "originator": ORIGINATOR,
     }
     return f"{ISSUER}/oauth/authorize?{urlencode(params)}"
-
-
-def parse_jwt_claims(token: str) -> dict[str, Any] | None:
-    """Decode (without verifying) the claims payload of a JWT."""
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None
-    padding = "=" * (-len(parts[1]) % 4)
-    try:
-        return json.loads(base64.urlsafe_b64decode(parts[1] + padding))
-    except (ValueError, json.JSONDecodeError):
-        return None
 
 
 def _compute_expires_at(tokens: Mapping[str, Any]) -> float | None:
@@ -222,7 +210,8 @@ async def login_with_browser(
         account_id=extract_account_id(tokens),
         expires_at=_compute_expires_at(tokens),
     )
-    resolved_path = save_credentials(credentials, auth_path)
+    async with auth_file_lock(auth_path):
+        resolved_path = save_credentials(credentials, auth_path)
     logger.info("Saved credentials to %s", resolved_path)
     return credentials
 
@@ -284,7 +273,8 @@ async def login_with_device_code(
         account_id=extract_account_id(tokens),
         expires_at=_compute_expires_at(tokens),
     )
-    resolved_path = save_credentials(credentials, auth_path)
+    async with auth_file_lock(auth_path):
+        resolved_path = save_credentials(credentials, auth_path)
     logger.info("Saved credentials to %s", resolved_path)
     return credentials
 
@@ -320,8 +310,17 @@ async def refresh_credentials(
         account_id=extract_account_id(tokens) or credentials.account_id,
         expires_at=_compute_expires_at(tokens),
     )
-    resolved_path = save_credentials(refreshed, auth_path)
-    logger.debug("Refreshed credentials saved to %s", resolved_path)
+    # The server has already rotated the refresh token, so a failed save must not lose the
+    # response: the caller keeps working from memory and the error is logged.
+    try:
+        resolved_path = save_credentials(refreshed, auth_path)
+    except OSError:
+        logger.exception(
+            "Could not save refreshed credentials; other clients of this auth file "
+            "will need a new login"
+        )
+    else:
+        logger.debug("Refreshed credentials saved to %s", resolved_path)
     return refreshed
 
 

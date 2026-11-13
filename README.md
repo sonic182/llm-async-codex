@@ -30,6 +30,30 @@ llm-async-codex login --verbose
 
 or from Python: `await login(device_code=False, auth_path=None, verbose=False)`.
 
+## Token refresh and shared auth files
+
+Access tokens are refreshed automatically shortly before they expire. Each refresh also rotates the
+refresh token and revokes the previous one, so several providers (or processes) using the same auth
+file coordinate through it:
+
+- a refresh holds an exclusive lock on `<auth file>.lock` next to the auth file (next to its
+  target, for a symlink);
+- under the lock it re-reads the file and reuses credentials another provider already refreshed,
+  as long as they belong to the same account and are not older than its own;
+- the file is written to a temporary sibling and renamed into place, keeping its permission bits
+  and any other fields in it (such as the Codex CLI's `id_token`), and written in place only if the
+  rename is refused;
+- a refresh request already sent is finished and kept even if the caller is cancelled or saving fails.
+
+Pass the same `auth_path` to every provider that shares a login (without one, the default
+`~/.codex/auth.json` is used). Keep the auth file's directory writable: without it there is no lock,
+and refreshes are coordinated only within each provider (a warning is logged). `login()` takes the lock;
+use `auth_file_lock(path)` around your own writes to the file. The Codex CLI itself does not take
+this lock, so sharing its file only works through the re-read: a refresh here rotates the CLI's
+refresh token, and a Codex CLI process already running with the old one fails on its own next
+refresh until it is restarted. The lock may not be shared across network or VM file shares. A file without a stored expiry (as the Codex CLI writes) takes it from the
+access token's `exp` claim.
+
 ## Tool calling
 
 Tool calling works through the normal streaming API: call `provider.acomplete(..., stream=True, tools=[...])`, drain `response.stream_content()`, then read `response.main_response.tool_calls`. Requires `llm-async>=0.5.2`.

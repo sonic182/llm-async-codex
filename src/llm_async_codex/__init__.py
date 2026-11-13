@@ -3,6 +3,7 @@
 from .auth import (
     CodexAuthError,
     CodexCredentials,
+    auth_file_lock,
     default_auth_path,
     load_credentials,
     save_credentials,
@@ -24,6 +25,7 @@ __all__ = [
     "CodexLoginError",
     "CodexModelCapabilities",
     "CodexProvider",
+    "auth_file_lock",
     "default_auth_path",
     "load_credentials",
     "login",
